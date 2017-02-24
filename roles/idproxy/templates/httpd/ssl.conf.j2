@@ -1,0 +1,190 @@
+# Mutex flock:/var/run/httpd/RewriteLock rewrite-map
+
+Listen 443 https
+
+SSLPassPhraseDialog exec:/usr/libexec/httpd-ssl-pass-dialog
+SSLSessionCache         shmcb:/run/httpd/sslcache(512000)
+SSLSessionCacheTimeout  300
+SSLRandomSeed startup file:/dev/urandom  256
+SSLRandomSeed connect builtin
+SSLCryptoDevice builtin
+
+<VirtualHost _default_:443>
+  ServerName {{ proxy_host }}
+  {% for alias in http_server.aliases -%}
+  ServerAlias {{ alias }}
+  {% endfor -%}
+
+  ErrorLog logs/ssl_error_log
+  TransferLog logs/ssl_access_log
+  LogLevel warn
+
+  SSLEngine on
+  SSLProtocol all -SSLv2
+  SSLCipherSuite HIGH:MEDIUM:!aNULL:!MD5
+
+  {% set cert_basename = 'star_' + proxy_host.split('.')[-3:] | join('.') -%}
+  # Certificates: {{ cert_basename }}
+  SSLCertificateFile      {{ httpd_cert_basedir }}/certs/{{ cert_basename }}.crt
+  SSLCertificateKeyFile   {{ httpd_cert_basedir }}/private/{{ cert_basename }}.key
+  SSLCertificateChainFile {{ httpd_cert_basedir }}/certs/{{ cert_basename }}_interim.crt
+  {% for alias in http_server.aliases -%}
+  {% set cert_basename = 'star_' + alias.split('.')[-3:] | join('.') -%}
+  # Certificates: {{ cert_basename }}
+  # SSLCertificateFile      {{ httpd_cert_basedir }}/certs/{{ cert_basename }}.crt
+  # SSLCertificateKeyFile   {{ httpd_cert_basedir }}/private/{{ cert_basename }}.key
+  # SSLCertificateChainFile {{ httpd_cert_basedir }}/certs/{{ cert_basename }}_interim.crt
+  {% endfor -%}
+
+  <Files ~ "\.(cgi|shtml|phtml|php3?)$">
+    SSLOptions +StdEnvVars
+  </Files>
+  <Directory "/var/www/cgi-bin">
+    SSLOptions +StdEnvVars
+  </Directory>
+
+  # Temporary to support testing of Shibboleth
+  <Directory "/var/www/html/secure">
+    # SSLOptions +StdEnvVars
+    DirectoryIndex index.html index.htm default.htm index.php index.php3 index.phtml index.php5 index.shtml mwindex.phtml
+  </Directory>
+
+  CustomLog logs/ssl_request_log \
+          "%t %h %{SSL_PROTOCOL}x %{SSL_CIPHER}x \"%r\" %b Referrer: %{Referer}i cookie: %{JHIR_logout}C"
+
+
+  ##############################
+  # mod_shib configuration
+  ##############################
+  # As long as Shibboleth module is installed, enable all Shibboleth/mod_shib related settings
+  <IfModule mod_shib>
+    # Shibboleth recommends turning on UseCanonicalName
+    # See "Prepping Apache" in https://wiki.shibboleth.net/confluence/display/SHIB2/NativeSPApacheConfig
+    UseCanonicalName {{ mod_shib.UseCanonicalName }}
+
+    # Most DSpace instances will want to use Shibboleth "Lazy Session", which ensures that users
+    # can access DSpace without first authenticating via Shibboleth.
+    # This section turns on Shibboleth "Lazy Session". Also ensures that once they have authenticated
+    # (by accessing /Shibboleth.sso/Login path), then their Shib session is kept alive
+    <Location />
+      AuthType shibboleth
+      ShibRequireSession Off
+      require shibboleth
+      # Testing configurations.
+      # ShibRequestSetting applicationId itjh-prod
+      # ShibRequestSetting applicationId itjh-test
+    </Location>
+
+    # If a user attempts to access the DSpace shibboleth login page, force them to authenticate via Shib
+    <Location "/shibboleth-login">
+      AuthType shibboleth
+      ShibRequireSession On
+      # https://wiki.shibboleth.net/confluence/display/SHIB2/NativeSPApacheConfig#NativeSPApacheConfig-AuthConfigOptions
+      # https://www.switch.ch/de/aai/support/serviceproviders/sp-access-rules.html#javaapplications
+      ShibUseHeaders On
+      require valid-user
+    </Location>
+
+    # Ensure /Shibboleth.sso path (in Apache) can be accessed
+    # By default it may be inaccessible if your Apache security is tight.
+    <Location "/Shibboleth.sso">
+      Order deny,allow
+      Allow from all
+      # Also ensure Shibboleth/mod_shib responds to this path
+      SetHandler shib
+      # ShibRequestSetting applicationId testshib
+    </Location>
+  </IfModule>
+
+
+  ##############################
+  # mod_proxy configuration
+  ##############################
+  SSLProxyEngine On
+
+  # don't pass paths used by Shibboleth
+  # ProxyPassMatch ^/robots.txt$ !
+  ProxyPassMatch ^/Shibboleth.sso !
+  ProxyPassMatch ^/shibboleth-ds !
+  ProxyPass / https://{{ dspace_host }}/
+  ProxyPassReverse / https://{{ dspace_host }}/
+
+
+  ##############################
+  # mod_rewrite configuration
+  ##############################
+  RewriteEngine on
+  # RewriteLog and RewriteLogLevel are no longer supported in Apache HTTPD 2.4+. Use "LogLevel rewrite:..." instead
+  # RewriteLog    /var/log/httpd/rewrite/log
+  # RewriteLogLevel 9
+  LogLevel alert {{ mod_rewrite.log_level }}
+
+  # Setup
+  RewriteRule .? - [E=PROXY_HOST:{{ proxy_host }}]
+  RewriteRule .? - [E=DSPACE_HOST:{{ dspace_host }}]
+  RewriteRule .? - [E=URI_HOST:{{ uri_host }}]
+  RewriteRule .? - [E=JHED_LOGOUT_URL:https://login.johnshopkins.edu/cgi-bin/logoff.pl]
+
+  # External resolution; start program once on server start
+  RewriteMap  jhid    dbm:{{ mod_rewrite.id_mapping_dbm }}
+
+  # Fix redirect for DSpace 5.x Shibboleth login, which has the real hostname in the query string
+  # https://idproxy01.mse.jhu.edu/Shibboleth.sso/Login?target=https%3A%2F%2Fdspace-prod.mse.jhu.edu%2F%2Fshibboleth-login
+  RewriteCond %{REQUEST_URI} ^/Shibboleth.sso/Login$
+  RewriteCond %{QUERY_STRING} target=(https%3A%2F%2F)(.*)(%2F.*)$
+  RewriteRule ^(.*)$ $1?target=%1%{ENV:PROXY_HOST}%3  [L]
+
+  # IF not any hostname that we want to accept
+    RewriteCond expr "! %{HTTP_HOST} -strcmatch '%{ENV:PROXY_HOST}' "
+    RewriteCond expr "! %{HTTP_HOST} -strcmatch '%{ENV:URI_HOST}' "
+  # THEN  issue 404 Not Found and exit ([L])
+    RewriteRule .? - [R=404,L]
+  # ENDIF
+
+  # IF host is the URI host (e.g., JHIR), but the request URI isn't one we handle
+    RewriteCond expr "%{HTTP_HOST} -strcmatch '%{ENV:URI_HOST}' "
+    RewriteCond %{REQUEST_URI} !^/handle/[^/]*/[^/]*$
+  # THEN issue 404 Not Found and exit ([L])
+    RewriteRule .? - [R=404,L]
+  # ENDIF
+
+  # Intercept request URI for DSpace 5.x logout.
+  # NB: Appears that you must hit DSpace's /logout PATH to effect the logout, even after Shibboleth Logout
+  RewriteRule ^/logout$ - [CO=JHIR_logout:true:%{ENV:PROXY_HOST}:0:/:false:true,L]
+
+  RewriteCond %{HTTP_COOKIE} (^|;\s*)JHIR_logout=([^;]+)
+  RewriteCond %2 true
+  RewriteRule ^/?$ /Shibboleth.sso/Logout?return=%{ENV:JHED_LOGOUT_URL} [CO=JHIR_logout:false:%{ENV:PROXY_HOST}:0:/:false:true,R,L]
+
+  RewriteRule ^/Shibboleth.sso/Logout$ - [CO=JHIR_logout:INVALID:%{ENV:PROXY_HOST}:-1,L]
+
+  # If we make it this far, we should have a URI of the correct form.
+  # Check for a redirect for collections that have been migrated out of JScholarship
+  # IF the Resolver service has a matching record for our handle ("hdl:<prefix>/<handle>")
+  # ... and it points to a collection item that is served outside of JScholarship (e.g., "levy:<box>.<item>")...
+    # Get Handle into %1
+    RewriteCond %{REQUEST_URI} ^/handle/([^/]*/[^/]*)$
+    # now lookup the Handle using the resolver (see RewriteMap above)
+    RewriteCond "${jhid:hdl:%1}" "^([^:]+):(.*)$"
+    #
+    # If this matches, then we have a collection/id to which to direct:
+    #   %1 = collection id (e.g., "levy"),
+    #   %2 = collection-specific id (e.g., <box>.<item> for Levy
+    RewriteRule .? /resolved/%1:%2
+    # ... and we set the new intermediate URL path to /resolver/<collection>:<collection-specific-id>
+  # THEN redirect to the appropriate location for the collection and ID
+    # If this is a Levy Item, then redirect to the item on the Levy service
+    RewriteRule ^/resolved/levy:(.*)$ http://levysheetmusic.mse.jhu.edu/catalog/levy:$1  [R,L]
+  # ENDIF
+
+  # ... deal with other collections here, as they emerge ...
+  # RewriteRule ^/resolved/<collection>:...$ ... [R,L]
+  # ...
+  # TODO: Deal with case of a matched Handle w/ no matching handler RewriteRule (i.e., has not already been processed
+  RewriteRule ^/resolved/ - [R=404,L]
+
+  # IF this was a JHIR URI, then redirect to JScholarship, since it didn't match a redirect
+    RewriteCond expr " %{HTTP_HOST} -strcmatch '%{ENV:URI_HOST}' "
+    RewriteRule ^/handle/(.*)$   https://%{ENV:PROXY_HOST}/handle/$1  [R,L]
+  # ENDIF
+</VirtualHost>

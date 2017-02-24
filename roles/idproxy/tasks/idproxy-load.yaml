@@ -1,0 +1,25 @@
+# -*- mode: yaml -*-
+# vi: set ft=yaml :
+
+---
+
+###############################################################################
+# create ID resolver mapping database
+###############################################################################
+
+- name: copy ID mappings source files
+  copy: src=resolver/ dest=/tmp/resolver-mappings
+
+- name: load ID mapping database
+  shell: cat /tmp/resolver-mappings/*mappings.txt | httxt2dbm -i - -o "{{ mod_rewrite.id_mapping_dbm }}"
+
+- name: clean up mapping source files
+  file: path=/tmp/resolver-mappings state=absent
+
+
+###############################################################################
+# start http server and enable autostart on boot
+###############################################################################
+
+- name: enable and start httpd on RedHat / CentOS 7.
+  service: name=httpd enabled=yes state=restarted

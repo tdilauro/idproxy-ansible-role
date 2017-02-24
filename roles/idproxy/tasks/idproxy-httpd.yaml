@@ -1,0 +1,44 @@
+# -*- mode: yaml -*-
+# vi: set ft=yaml :
+
+---
+
+###############################################################################
+# install/enable OS pre-reqs (RedHat/CentOS 7)
+###############################################################################
+
+- name: ensure EPEL repository for RedHat/CentOS 7
+  yum: name=epel-release state=latest
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"
+
+
+###############################################################################
+# install pre-req packages (RedHat/CentOS 7)
+###############################################################################
+
+- name: install apache httpd and modules for RedHat/CentOS 7
+  yum: name="{{item}}" state=latest
+  with_items:
+    - httpd
+    - mod_ssl
+  #  - mod_shib
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"
+
+
+###############################################################################
+# HTTP server support (shib, module, etc.)
+###############################################################################
+
+- name: install http redirect/ID mapper template (redirect http -> https)
+  template: src=httpd/jhir.vhost.conf.j2 dest=/etc/httpd/conf.d/jhir.vhost.conf
+        owner=root group=root mode=0644
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"
+
+- name: install mod_ssl template
+  template: src=httpd/ssl.conf.j2 dest=/etc/httpd/conf.d/ssl.conf
+        force=yes owner=root group=root mode=0644
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"

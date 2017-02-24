@@ -1,0 +1,53 @@
+<VirtualHost *:80>
+
+ServerName {{ proxy_host }}
+{% for alias in http_server.aliases -%}
+ServerAlias {{ alias }}
+{% endfor -%}
+
+RewriteEngine On
+# RewriteLog and RewriteLogLevel are no longer supported in Apache HTTPD 2.4+. Use "LogLevel rewrite:..." instead
+LogLevel alert {{ mod_rewrite.log_level }}
+
+# Setup some handy variables
+RewriteRule .? - [E=PROXY_HOST:{{ proxy_host }}]
+RewriteRule .? - [E=DSPACE_HOST:{{ dspace_host }}]
+RewriteRule .? - [E=URI_HOST:{{ uri_host }}]
+RewriteRule .? - [E=JHED_LOGOUT_URL:https://login.johnshopkins.edu/cgi-bin/logoff.pl]
+
+# Register the ID resolver map database
+RewriteMap  jhid    dbm:{{ mod_rewrite.id_mapping_dbm }}
+
+  # IF the request is anything *other than* one of our handles
+    RewriteCond %{REQUEST_URI} !^/handle/[^/]*/[^/]*$
+  # THEN redirect to jscholarship to deal with it
+    RewriteRule ^(/?.*)$ https://%{ENV:PROXY_HOST}$1 [R,L]
+  # ENDIF
+
+  # If we make it this far, we should have a URI of the correct form.
+  # Check for a redirect for collections that have been migrated out of JScholarship
+  # IF the Resolver service has a matching record for our handle ("hdl:<prefix>/<handle>")
+  # ... and it points to a collection item that is served outside of JScholarship (e.g., "levy:<box>.<item>")...
+    # Get Handle into %1
+    RewriteCond %{REQUEST_URI} ^/handle/([^/]*/[^/]*)$
+    # now lookup the Handle using the resolver (see RewriteMap above)
+    RewriteCond "${jhid:hdl:%1}" "^([^:]+):(.*)$"
+    # If this matches, then we have a collection/id to which to direct:
+    #   %1 = collection id (e.g., "levy"),
+    #   %2 = collection-specific id (e.g., <box>.<item> for Levy
+    RewriteRule .? /resolved/%1:%2
+    # ... and we set the new intermediate URL path to /resolver/<collection>:<collection-specific-id>
+  # THEN redirect to the appropriate location for the collection and ID
+    # If this is a Levy Item, then redirect to the item on the Levy service
+    RewriteRule ^/resolved/levy:(.*)$ http://levysheetmusic.mse.jhu.edu/catalog/levy:$1  [R,L]
+    # ... deal with other collections here, as they emerge ...
+    # RewriteRule ^/resolved/<collection>:...$ ... [R,L]
+    # ...
+    # Deal with case of a matched Handle w/ no matching handler RewriteRule (i.e., has not already been processed)
+    RewriteRule ^/resolved/ - [R=404,L]
+  # ELSE redirect the original to JScholarship
+    #  Otherwise, redirect to JScholarship
+    RewriteRule ^(/?.*)$ https://%{ENV:PROXY_HOST}$1 [R,L]
+ # ENDIF
+
+</VirtualHost>

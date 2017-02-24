@@ -1,0 +1,68 @@
+# -*- mode: yaml -*-
+# vi: set ft=yaml :
+
+---
+
+###############################################################################
+# Shibboleth SP install and configuration
+###############################################################################
+
+- name: install shibboleth repo for RedHat/CentOS7
+  get_url: url="{{ shib_repo.url }}"  dest="{{ shib_repo.dest }}"
+    owner=root group=root mode=0644
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"
+
+- name: install Shibboleth RPMs for RedHat/CentOS7
+  yum: name="{{item}}" state=latest
+  with_items: "{{ shib_packages }}"
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"
+
+#- name: STOP HERE
+#  fail: msg="STOP - remainder of tasks file needs editing"
+
+###############################################################################
+# STOP here until we edit the rest of the file
+###############################################################################
+
+- name: copy other shibboleth files
+  copy:
+    src: "shibboleth/{{ item.src }}"
+    dest: "{{ item.dest | default( '/etc/shibboleth' ) }}"
+    force: yes
+    owner: "{{ item.owner | default( 'root' ) }}"
+    group: "{{ item['group'] | default( 'shibd' ) }}"
+    mode: "{{ item.mode | default( '640' ) }}"
+    seuser: "{{ item.seuser | default( 'system_u' ) }}"
+    serole: "{{ item.serole | default( 'object_r' ) }}"
+    setype: "{{ item.setype | default( 'etc_t' ) }}"
+    selevel: "{{ item.selevel | default( 's0' ) }}"
+  with_items:
+    - { src: 'attribute-map.xml', mode: '644' }
+    - { src: 'ITatJH-prod-idp-metadata.xml' }
+    - { src: 'ITatJH-test-idp-metadata.xml' }
+    - { src: 'sp-cert.pem', mode: '644' }
+    - { src: 'sp-key.pem',  mode: '640' }
+
+- name: copy shibboleth2 configuration files from templates
+  template:
+    src: "shibboleth/{{ item.src }}"
+    dest: "{{ item.dest | default( '/etc/shibboleth' ) }}"
+    force: yes
+    owner: "{{ item.owner | default( 'root' ) }}"
+    group: "{{ item['group'] | default( 'shibd' ) }}"
+    mode: "{{ item.mode | default( '640' ) }}"
+    seuser: "{{ item.seuser | default( 'system_u' ) }}"
+    serole: "{{ item.serole | default( 'object_r' ) }}"
+    setype: "{{ item.setype | default( 'etc_t' ) }}"
+    selevel: "{{ item.selevel | default( 's0' ) }}"
+  with_items:
+    - { src: 'shibboleth2.xml.j2', dest: '/etc/shibboleth/shibboleth2.xml', group: root, mode: 644 }
+
+
+###############################################################################
+# (Re)Start shibd service and configure it to start automatically on boot
+###############################################################################
+- name: enable and start shibd on RedHat / CentOS 7.
+  service: name=shibd enabled=yes state=started

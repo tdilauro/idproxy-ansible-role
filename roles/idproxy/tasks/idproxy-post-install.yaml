@@ -1,0 +1,12 @@
+# -*- mode: yaml -*-
+# vi: set ft=yaml :
+
+---
+
+- name: open firewall for https (443) and http (80) services on RedHat / CentOS 7
+  firewalld: zone=public service={{item}} state=enabled immediate=yes permanent=yes
+  with_items:
+    - https
+    - http
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"

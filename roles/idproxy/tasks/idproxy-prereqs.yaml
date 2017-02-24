@@ -1,0 +1,27 @@
+# -*- mode: yaml -*-
+# vi: set ft=yaml :
+
+---
+
+###############################################################################
+# install/enable OS pre-reqs (RedHat/CentOS 7)
+###############################################################################
+
+- name: ensure EPEL repository for RedHat/CentOS 7
+  yum: name=epel-release state=latest
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"
+
+
+###############################################################################
+# install pre-req packages (RedHat/CentOS 7)
+###############################################################################
+
+- name: install some general pre-reqs for RedHat/CentOS 7
+  yum: name="{{item}}" state=latest
+  with_items:
+    - unzip
+    - patch
+    - git
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version == "7"

@@ -1,0 +1,10 @@
+# -*- mode: yaml -*-
+# vi: set ft=yaml :
+
+---
+
+- include: idproxy-prereqs.yaml
+- include: idproxy-shib-sp.yaml
+- include: idproxy-httpd.yaml
+- include: idproxy-load.yaml
+- include: idproxy-post-install.yaml

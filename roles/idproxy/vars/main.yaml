@@ -1,0 +1,80 @@
+# -*- mode: yaml -*-
+# vi: set ft=yaml :
+
+---
+
+# NO PASSWORDS in this file
+
+###############################################################################
+# Shibboleth settings
+###############################################################################
+
+shib_repo:
+  url: "http://download.opensuse.org/repositories/security:/shibboleth/CentOS_7/security:shibboleth.repo"
+  dest: "/etc/yum.repos.d"
+shib_packages:
+  - shibboleth
+shib_jhed_logout_uri: "https://login.johnshopkins.edu/cgi-bin/logoff.pl"
+# The first application must be the default
+shib_sp_applications:
+  - id: "default"
+    appl_entity_id: "https://idproxy01.mse.jhu.edu/shibboleth"
+    IdP_entity_id: "https://shibboleth.jh.edu/idp/shibboleth"
+    IdP_metadata_file: "ITatJH-prod-idp-metadata.xml"
+    attribute_map: "attribute-map.xml"
+    signon: "SAML2 SAML1"
+    logout: "Local"
+    remote_user: "principal-id"
+    certificate: "sp-cert.pem"
+    keyfile: "sp-key.pem"
+  - id: "itjh-prod"
+    comment: "IT@JH PRODUCTION - Override for IT@JH production shibboleth"
+    SSO_entity_id: "https://shibboleth.jh.edu/idp/shibboleth"
+    SSO_metadata_file: "ITatJH-prod-idp-metadata.xml"
+    logout: "Local"
+    remote_user: "eppn uid"
+  - id: "itjh-test"
+    comment: "IT@JH TEST - Override for IT@JH test shibboleth"
+    IdP_entity_id: "https://testidp.jh.edu/idp/shibboleth"
+    IdP_metadata_file: "ITatJH-test-idp-metadata.xml"
+    logout: "SAML2 Local"
+    remote_user: "principal-id"
+
+
+###############################################################################
+# Apache httpd settings
+#
+# NB:
+# - Tasks and configuration assume SSL certs already installed
+# - Shibboleth applicationId's come from Shibboleth settings
+###############################################################################
+
+dspace_host: "dspace-prod.mse.jhu.edu"
+proxy_host: "jscholarship.library.jhu.edu"
+uri_host: "jhir.library.jhu.edu"
+
+http_server:
+  name: "{{ proxy_host }}"
+  aliases:
+    - "jhir.library.jhu.edu"
+    - "idproxy02.mse.jhu.edu"
+  ssl_port: "443"
+
+httpd_cert_basedir: /etc/pki/tls
+
+mod_rewrite:
+  log_level: ""
+  id_mapping_dbm: "/etc/httpd/conf/id-resolver-mapping.dbm"
+
+mod_shib:
+  UseCanonicalName: "Off"
+
+#proxy:
+#  url_map:
+#    path: "/"
+#    url: "https://dspace-prod.mse.jhu.edu/"
+#    path: "/"
+#    url: "https://dspace-prod.mse.jhu.edu/"
+#  doNotPass:
+#    - "^/Shibboleth.sso"
+#    - "^/shibboleth-ds"
