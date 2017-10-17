@@ -39,7 +39,7 @@ RewriteMap  jhid    dbm:{{ mod_rewrite.id_mapping_dbm }}
     # ... and we set the new intermediate URL path to /resolver/<collection>:<collection-specific-id>
   # THEN redirect to the appropriate location for the collection and ID
     # If this is a Levy Item, then redirect to the item on the Levy service
-    RewriteRule ^/resolved/levy:(.*)$ http://levysheetmusic.mse.jhu.edu/catalog/levy:$1  [R,L]
+    RewriteRule ^/resolved/levy:(.*)\.(.*)$ http://levysheetmusic.mse.jhu.edu/collection/$1/$2  [R,L]
     # ... deal with other collections here, as they emerge ...
     # RewriteRule ^/resolved/<collection>:...$ ... [R,L]
     # ...
